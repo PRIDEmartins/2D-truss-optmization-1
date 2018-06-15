@@ -1,0 +1,254 @@
+function [Sigma,U] = FEM(load,x)
+global N_NOS N_ELE N_RES N_DOF NO ELE
+double precision;
+% Características físicas do problema
+A=1; rho=2800; E=80e9; g=-9.81; L=1;
+F_direction = +1; % tração, se for positivo, compressão, c.c.
+F_abs = 1e3;
+
+N_COLUMS = 21;
+N_LINES = 21;
+N_NOS = 21*21; % Número de nós: 441
+N_ELE = 1240; % Número de elementos (manual)
+N_DOF = 2*N_NOS; % Número total de DOFs
+% Nós com condição de contorno aplicada: 1=restrito; 0=irrestrito;
+CC=zeros(N_DOF); CC(1)=1; CC(2)=1; CC(42)=1;
+
+%% Tratamento das entradas
+
+N_RES=0; for i=1:N_DOF; if CC(i)==1; N_RES=N_RES+1; end; end
+% Matriz de Posicionamento dos nós: | nó 1 | x | y
+NO = zeros(N_NOS,3); k=1; j=1;
+for i = 1:N_NOS
+    NO(i,1) = i;
+    NO(i,2) = NO(i,2) + (k-1)*1/20;
+    NO(i,3) = NO(i,3) + (j-1)*1/20;
+    k=k+1;
+    if mod(k,N_LINES+1) == 0
+        j=j+1;
+        k=1;
+    end
+end
+
+% Matriz de conectividade: Elemento | nó 1 | nó 2
+ELE=zeros(N_ELE,3); line=0; column=0; LIM_H=N_COLUMS*(N_LINES-1);
+LIM_V=2*LIM_H; LIM_D1=LIM_V+(N_ELE-LIM_V)/2; l_jump=0;
+line1=0; column1=0; l_jump1=0;
+for i = 1:N_ELE
+    ELE(i,1) = i;
+    
+    if line == N_LINES % zera a numeração da linha atual quan no topo
+        line = 0;
+        l_jump = 0;
+        column = 0;
+    end
+    
+    % Elementos horizontais
+    if i <= LIM_H
+        ELE(i,2) = i + line;
+        ELE(i,3) = i + 1 + line;
+        if mod(i,N_LINES-1) == 0
+            line=line+1;
+        end
+    end
+    
+    % Elementos verticais
+    if i > LIM_H && i <= LIM_V
+        ELE(i,2) = i - LIM_H;
+        ELE(i,3) = (i+N_LINES) - LIM_H;
+    end
+    
+     % Elementos diagonais (esq->dir)
+    if i > LIM_V && i <= LIM_D1
+        ELE(i,2) = (i-LIM_V)  + (column+l_jump);
+        ELE(i,3) = ELE(i,2) + (N_LINES+1);
+        column = column + 1;
+        if mod( (i-LIM_V),(N_LINES-11)) == 0
+            
+            line = line+1;
+            if mod(line,2) == 0
+                l_jump = l_jump + 0;
+            end
+            
+            if mod(line,2) == 1
+                l_jump = l_jump + 2;
+            end
+        end
+    end
+    
+     % Elementos diagonais (dir->esq)
+    if i > LIM_D1
+        ELE(i,2) = (i-LIM_D1+2)  + (column1+l_jump1);
+        ELE(i,3) = ELE(i,2) + (N_LINES-1);
+        column1 = column1 + 1;
+        if mod( (i-LIM_D1),(N_LINES-11)) == 0
+            
+            line1 = line1+1;
+            if mod(line1,2) == 0
+                l_jump1 = l_jump1 + 2;
+            end
+            
+            if mod(line,2) == 1
+                l_jump1 = l_jump1 + 1;
+            end
+        end
+    end
+    
+end
+
+% Matriz com os DOFs de cada nó: Nó | dof x | dof y
+DOF=zeros(N_NOS,3);
+for i = 1:N_NOS
+    DOF(i,1) = i;
+    DOF(i,2) = 2*i-1;
+    DOF(i,3) = 2*i;
+end
+
+% Construção da matriz de rigidez global:
+% MatrizRigidez(x1,y1,x2,y2,A,E,x)
+x1=0; y1=0; x2=L/20; y2=0;
+k_h = Stiffness(x1,y1,x2,y2,A,E); % elementos horizontais
+x1=0; y1=0; x2=0; y2=L/20;
+k_v = Stiffness(x1,y1,x2,y2,A,E); % elementos verticais
+x1=0; y1=0; x2=L/20; y2=L/20;
+k_d1 = Stiffness(x1,y1,x2,y2,A,E); % elementos esq->dir
+x1=0; y1=0; x2=-L/20; y2=L/20;
+k_d2 = Stiffness(x1,y1,x2,y2,A,E); % elementos dir->esq
+
+K = zeros(N_DOF);
+for i = 1:N_ELE
+    % número do elemento -> nó 1 , nó 2 (do elemento i)
+    elemento = ELE(i,:); no1 = elemento(2); no2 = elemento(3);
+    % os graus de liberdade globais: u1,v2,u2,v2 (onde vão em K)
+    u1=DOF(no1,2); v1=DOF(no1,3); u2=DOF(no2,2); v2=DOF(no2,3);
+    % vetor com as posições nas quais se somarão as rigidez:
+    pos = [u1 v1 u2 v2];
+    % Adição das rigidezes nos respectivos lugares: K(i,j)
+    % x = multiplica a área atual pela inicial: x_i * 1
+    if i <= LIM_H
+        K(pos,pos) = K(pos,pos)+k_h*x(i);
+    end
+    
+    if i > LIM_H && i <= LIM_V
+        K(pos,pos) = K(pos,pos)+k_v*x(i);
+    end
+    
+    if i > LIM_V && i <= LIM_D1
+        K(pos,pos) = K(pos,pos)+k_d1*x(i);
+    end
+    
+    if i > LIM_D1
+        K(pos,pos) = K(pos,pos)+k_d2*x(i);
+    end
+end
+
+% Aplicação das restrições:
+l=1; pos = zeros(N_DOF-N_RES,1);
+for i = 1:N_DOF
+    if CC(i) ~= 1
+        pos(l,1) = pos(l,1) + i;
+        l=l+1;
+    end
+end
+% Construção da matriz de rigidez reduzida com as C.C.s
+K_red = zeros(N_DOF-N_RES); K_red = K_red+K(pos,pos);
+
+%% Todas as forças são consideradas no modelo
+F = zeros(N_DOF,1);
+if load == 0
+    for i = 1:N_ELE
+        % i-ésimo elemento com seus respectivos nós
+        elemento = ELE(i,:); no1=elemento(2); no2=elemento(3);
+        % DOFs associados aos nós 1 e 2 do i-ésimo elemento:
+        %                      u1=DOF(no1,2);  u2=DOF(no2,2)
+        v1=DOF(no1,3); v2=DOF(no2,3);
+        if i <= LIM_V
+            l=L/20;
+        end
+        if i > LIM_V
+            l = sqrt( (L/20)^2 + (L/20)^2 );
+        end
+        Peso = x(i)*rho*l*g;
+        F(v1)=F(v1)+Peso/2; F(v2)=F(v2)+Peso/2;
+    end
+    F(882)=F(882)+F_abs*F_direction; % para direita, último nó no topo à direita
+    F(881)=F(881)+F_abs*F_direction; % para cima, último nó no topo à direita
+    F(842)=F(842)+F_abs*F_direction;% para cima, último nó no topo à esquerda
+    F(841)=F(841)+F_abs*-F_direction;% para esquerda, último nó no topo à esquerda
+end
+
+%% Caso no qual apenas as forças externas são consideradas:
+if load == N_ELE+1
+    F(882)=F(882)+F_abs*F_direction; % para direita, último nó no topo à direita
+    F(881)=F(881)+F_abs*F_direction; % para cima, último nó no topo à direita
+    F(842)=F(842)+F_abs*F_direction;% para cima, último nó no topo à esquerda
+    F(841)=F(841)+F_abs*-F_direction;% para esquerda, último nó no topo à esquerda
+end
+
+%% Apenas o peso da barra i é considerado
+if load>=1 && load<=N_ELE
+    % i-ésimo elemento com seus respectivos nós
+    elemento = ELE(load,:); no1=elemento(2); no2=elemento(3);
+    % DOFs associados aos nós 1 e 2 do i-ésimo elemento:
+    %                      u1=DOF(no1,2);  u2=DOF(no2,2)
+    v1=DOF(no1,3); v2=DOF(no2,3);
+    if load <= LIM_V
+        l=L/20;
+    end
+    if load > LIM_V
+        l = sqrt( (L/20)^2 + (L/20)^2 );
+    end
+    Peso = x(load)*rho*l*g;
+    F(v1)=F(v1)+Peso/2; F(v2)=F(v2)+Peso/2;
+end
+
+%% Construção do vetor de forças reduzido
+F_red=zeros(N_DOF-N_RES,1); p=1;
+for i = 1:N_DOF
+    if CC(i) ~= 1
+        F_red(p) = F_red(p)+F(i);
+        p=p+1;
+    end
+end
+
+% Solução dos deslocamentos:
+u_red = K_red\F_red;
+
+% Obtenção dos deslocamentos globais:
+u=zeros(N_DOF,1); p=1;
+for i = 1:N_DOF
+    if CC(i) ~= 1
+        u(i) = u_red(p);
+        p=p+1;
+    end
+end
+
+%% Obtenção das tensões finais
+% Determinação das tensões normais em cada elemento
+S = zeros(N_ELE,1);
+for i = 1:N_ELE
+    % i-ésimo elemento com seus respectivos nós
+    elemento = ELE(i,:); no1=elemento(2); no2=elemento(3);
+    % DOFs associados aos nós 1 e 2 do i-ésimo elemento
+    u1=DOF(no1,2); v1=DOF(no1,3); u2=DOF(no2,2); v2=DOF(no2,3);
+    % matriz com coeficientes para ponderação dos deslocamentos
+    if i<=LIM_H
+        l=L/20; c=1; s=0;
+    end
+    if i>LIM_H && i<=LIM_V
+        l=L/20; c=0; s=1;
+    end
+    if i>LIM_V && i<=LIM_D1
+        l=sqrt( 2*(L/20)^2); c=sqrt(2)/2; s=sqrt(2)/2;
+    end
+    if i>LIM_D1
+        l=sqrt( 2*(L/20)^2); c=-sqrt(2)/2; s=sqrt(2)/2;
+    end
+    C = (E/l)*[-c -s  c  s];
+    S(i) = C*[u(u1); u(v1); u(u2); u(v2)];
+end
+% Tensões resultantes em cada seção:
+U=u;
+Sigma=S;
+
+end
