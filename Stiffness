@@ -1,0 +1,22 @@
+function K = Stiffness(x1,y1,x2,y2,A,E)
+
+L = sqrt( (y2-y1)^2 + (x2-x1)^2);
+X = A*E/L;
+a = atan( (y2-y1)/(x2-x1) );
+c = cos(a);
+s = sin(a);
+
+K = X*[c*c  c*s -c*c -c*s
+       c*s  s*s -c*s -s*s
+      -c*c -c*s  c*c  c*s
+      -c*s -s*s  c*s  s*s];
+  
+  for i = 1:length(K)
+      for j = 1:length(K)
+          if abs(K(i,j)) < 0.001
+              K(i,j) = 0;
+          end
+      end
+  end
+  
+end
