@@ -1,0 +1,39 @@
+% Código desenvolvido para a obtenção dos coeficientes de influência de
+clc; clear all; close all; double precision;
+global Coe Smax Amin
+% options=optimoptions('fmincon','Display','iter',...
+% 'Algorithm','interior-point','ConstraintTolerance',1e-9,...
+% 'MaxFunEvals',1000000,'StepTolerance',1e-9,'OptimalityTolerance',0.2e-7,...
+% 'PlotFcn',...
+% {@optimplotx,@optimplotfval,@optimplotfirstorderopt,@optimplotconstrviolation});
+
+options=optimoptions('fmincon','Algorithm','interior-point','ConstraintTolerance',1e-9,...
+'Display','iter','MaxFunEvals',1000000,'StepTolerance',1e-9,'OptimalityTolerance',0.2e-7);
+
+N_ELE=1240;
+x0 = 1*ones(N_ELE,1); % Condição inicial
+Amin=5e-6; Ao=1; Smax=50e6;
+
+% Obtenção dos coeficientes de influência para cada elemento:
+Coe = zeros(N_ELE,N_ELE+1);
+for j = 1:N_ELE+1 % coluna: todas as tensões devido à j-ésima carga
+    [Tensao,Deslocamento] = FEM(j,x0);
+    Coe(:,j) = Coe(:,j) + Tensao;
+end
+% 
+% A=zeros(2*N_ELE,N_ELE); 
+% A(1:N_ELE,:)=Coe(:,1:end-1)-Smax*eye(N_ELE);  
+% A(N_ELE+1:end,:)=-Coe(:,1:end-1)+Smax*eye(N_ELE);
+% 
+% b=zeros(2*N_ELE,1); b(1:N_ELE)=-Coe(:,end); b(N_ELE+1:end)=+Coe(:,end); 
+
+A=Coe(:,1:N_ELE)-Smax*eye(N_ELE); b(1:N_ELE)=-1*Coe(:,end);
+A=A/x0(1);
+
+Aeq=[]; beq=[]; lb=(Amin)*ones(N_ELE,1); ub=Ao*ones(N_ELE,1);
+Restricoes=[];
+
+[x,fval,exitflag,output,lambda,grad,hessian] = ...
+    fmincon(@ObjFun, x0, A, b, Aeq, beq, lb, ub, Restricoes,options);
+
+fprintf('Processo finzalicado.\n');
