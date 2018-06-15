@@ -1,0 +1,95 @@
+function PosProcessamento=PP(x)
+clc; close all;
+% Tratamento dos dados de otimização: Rodar primeiro "ProcesoDeOtimização"
+% para libear as variáveis usadas neste código gerador de gráficos
+global N_NOS N_ELE NO ELE
+
+Smax=50e6; Amin=5e-6;
+%% Variáveis da função
+Escala = 100;
+Titulo1='Stress and areas obtained from the GA algorithm';
+NameFig1='1240ele_GA_Results.png';
+NameFig2='1240ele_GA_Plot.png';
+
+%% Obtenção dos resultados finais
+[S,U]=FEM(0,x);
+normS=S/Smax;
+
+%% Plotagem das tensões:
+figure;
+subplot(2,1,1);
+bar(normS,1,'k'); hold on;
+% linhas de limite inf e sup.
+plot([0 N_ELE],[1 1],'r'); plot([0 N_ELE],[-1 -1],'r'); 
+ylabel('\sigma/\sigma_{adm}');
+text(30,0.80,'\uparrow \sigma_{max}/\sigma_{adm}','fontname','times');
+text(30,-0.80,'\downarrow \sigma_{min}/\sigma_{adm}','fontname','times');
+set(gca,'fontname','times');
+axis([0 Inf -1.2 1.2]);
+title(Titulo1);
+
+%% Plotagem dos resultados otimizados
+subplot(2,1,2);
+normA = x/Amin;
+bar(normA,1,'k'); hold on;
+% linhas de limite inf e sup.
+p=plot([0 N_ELE],[1 1],'r');
+xlabel('Element'); ylabel('x/x_{min}');
+% text(8.70,5,'x_{min} in red','fontname','times');
+legend([p],'x_{min}');
+set(gca,'fontname','times');
+axis([0 Inf 0 Inf]);
+
+% Armazenamento dos resultados:
+set(gcf, 'Position', [100, 100, 400, 300]);
+% saveas(gcf,NameFig1);
+
+U=U*Escala;
+
+%%
+
+figure;
+plot(NO(:,2),NO(:,3),'ko','MarkerSize',2.5,'MarkerFaceColor',[1,0,0])
+% Atualizar a posição dos nós:
+x=zeros(N_NOS,1); y=x;
+for i = 1:N_NOS
+    x(i) = U(2*i-1);
+    y(i) = U(2*i);
+end
+
+NO(:,2) = NO(:,2) + x(:);
+NO(:,3) = NO(:,3) + y(:);
+
+% Plotar posição atualizada dos nós:
+hold on;
+axis([-0.1 1.1 -0.1 1.1]);
+for i = 1:N_ELE
+    elemento = ELE(i,:); no1 = elemento(2); no2 = elemento(3);
+    x1=NO(no1,2); y1=NO(no1,3); x2=NO(no2,2); y2=NO(no2,3);
+    p=plot([x1,x2],[y1,y2]);
+    f=abs(normS(i));
+    if f <= 0.50
+        Cor = [1 1 1]*0.8;
+        Espessura=1;
+    end
+    if f >0.50 && f<=0.90
+        Cor = [0 0 0];
+        Espessura=1;
+    end
+    if f > 0.90
+        Cor = [1 0 0]*1;
+        Espessura=1;
+    end
+    p.Color = Cor; p.LineWidth=Espessura;
+
+%     text(-0.05,1.05,'\leftarrow'); text(-0.05,1.05,'\uparrow');
+%     text(-0.05,1,'\rightarrow'); text(1,1.05,'\uparrow');
+    plot(0,-0.02,'k^','MarkerFaceColor',[0,0,0]);
+    plot(1,-0.02,'k^','MarkerFaceColor',[0,0,0]);
+    
+    set(gcf, 'Position', [100, 100, 300, 300]);
+%     saveas(gcf,NameFig2);
+    
+    PosProcessamento=0;
+    
+end
